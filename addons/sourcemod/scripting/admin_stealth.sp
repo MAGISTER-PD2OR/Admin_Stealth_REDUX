@@ -307,9 +307,9 @@ public Action:Hook_Transmit(entity, client)
 
 public Action:AFKM_OnAFKEvent(const String:name[], client)
 {
-    if(ValidPlayer(client) && g_bIsInvisible[client])
+	if(ValidPlayer(client) && g_bIsInvisible[client])
 	{
-	    return Plugin_Handled; //Prevent AFK actions for this player
+		return Plugin_Handled; //Prevent AFK actions for this player
 	}
 	return Plugin_Continue;
 }
