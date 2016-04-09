@@ -206,18 +206,17 @@ public Action:Command_Status(client, const String:command[], args)
 
 public Action:Command_Ping(client, const String:command[], args)
 {
-    if(!ValidPlayer(client) || CheckCommandAccess(client, "sm_stealth", 0)) // Console will now work!!!
+	if(!ValidPlayer(client) || CheckCommandAccess(client, "sm_stealth", 0)) // Console will now work!!!
 	{
 		return Plugin_Continue;
 	}
 	if(nextPing[client]<=GetGameTime())
 	{
-	    PrintToConsole(client, "Client ping times:");
+		PrintToConsole(client, "Client ping times:");
 		for(new i=1; i<=MaxClients; i++)
 		{
-		    if(ValidPlayer(i) && !g_bIsInvisible[i])
+			if(ValidPlayer(i) && !g_bIsInvisible[i])
 			{
-			    PrintToConsole(client, " %i ms : %N", RoundToFloor(GetClientAvgLatency(i, NetFlow_Both) * 1000.0, i);
 			}
 		}
 		nextPing[client]=GetGameTime()+5.0;
@@ -241,7 +240,7 @@ public Action:Command_Stealth(client, args)
 
 ToggleInvis(client)
 {
-    (g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client);
+	(g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client);
 }
 
 InvisOff(client, announce=true)
