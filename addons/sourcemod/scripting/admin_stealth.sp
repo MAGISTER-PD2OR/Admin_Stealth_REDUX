@@ -217,6 +217,7 @@ public Action:Command_Ping(client, const String:command[], args)
 		{
 			if(ValidPlayer(i) && !g_bIsInvisible[i])
 			{
+				PrintToConsole(client, " %i ms : %N", RoundToFloor(GetClientAvgLatency(i, NetFlow_Both) * 1000.0), i);
 			}
 		}
 		nextPing[client]=GetGameTime()+5.0;
