@@ -4,6 +4,11 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <tf2_stocks>
+/*
+#undef REQUIRE_PLUGIN
+#tryinclude <afk_manager> 
+#define REQUIRE_PLUGIN
+*/
 
 //Defines
 #define PLUGIN_VERSION "1.6.1"
@@ -251,9 +256,10 @@ InvisOff(client, announce=true)
 	ChangeClientTeam(client, g_iOldTeam[client]);
 	SetEntityMoveType(client, MOVETYPE_ISOMETRIC);
 	SetEntProp(client, Prop_Data, "m_takedamage", 2);
-	new String:buffer[MAX_NAME_LENGTH];
-	GetClientInfo(client, "name", buffer, sizeof(buffer));
+	//new String:buffer[MAX_NAME_LENGTH];
+	//GetClientInfo(client, "name", buffer, sizeof(buffer));
 	//SilentNameChange(client, buffer);
+	SetEntProp(client, Prop_Data, "m_autoKickDisabled", false); // Enable the integrated TF2 auto-kick manager for this client
 	if(announce)
 	{
 		PrintToChatAll(JOIN_MESSAGE, client);
@@ -279,6 +285,7 @@ InvisOn(client, announce=true)
 	ChangeClientTeam(client, STEALTHTEAM);
 	SetEntityMoveType(client, MOVETYPE_NOCLIP);
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
+	SetEntProp(client, Prop_Data, "m_autoKickDisabled", true); // Disable the integrated TF2 auto-kick manager for this client
 	if(announce)
 	{
 		PrintToChatAll(QUIT_MESSAGE, client);
@@ -296,6 +303,15 @@ public Action:Hook_Transmit(entity, client)
 	}
 	return Plugin_Continue;
 	
+}
+
+public Action:AFKM_OnAFKEvent(const String:name[], client)
+{
+    if(ValidPlayer(client) && g_bIsInvisible[client])
+	{
+	    return Plugin_Handled; //Prevent AFK actions for this player
+	}
+	return Plugin_Continue;
 }
 
 bool:ValidPlayer(client)
