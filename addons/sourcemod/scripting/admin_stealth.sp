@@ -6,7 +6,7 @@
 #include <tf2_stocks>
 
 //Defines
-#define PLUGIN_VERSION "1.6"
+#define PLUGIN_VERSION "1.6.1"
 #define JOIN_MESSAGE "Player %N has joined the game"
 #define QUIT_MESSAGE "Player %N left the game (Disconnected by user.)"
 #define STEALTHTEAM 0
@@ -17,6 +17,7 @@
 new bool:g_bIsInvisible[MAXPLAYERS+1];
 new g_iOldTeam[MAXPLAYERS+1];
 new Float:nextStatus[MAXPLAYERS+1];
+new Float:nextPing[MAXPLAYERS+1];
 new Handle:g_hHostname;
 new Handle:g_hTags;
 new Handle:g_hTVEnabled;
@@ -58,6 +59,7 @@ public OnPluginStart()
 	AddCommandListener(Command_JoinTeamOrClass, "joinclass");
 	AddCommandListener(Command_JoinTeamOrClass, "autoteam");
 	AddCommandListener(Command_Status, "status");
+	AddCommandListener(Command_Ping, "ping");
 	for(new i=1; i<=MaxClients; i++)
 	{
 		if(ValidPlayer(i))
@@ -88,6 +90,7 @@ public OnClientDisconnect(client)
 	SDKUnhook(client, SDKHook_SetTransmit, Hook_Transmit);
 	g_bIsInvisible[client]=false;
 	nextStatus[client]=0.0;
+	nextPing[client]=0.0;
 }
 
 public OnClientPutInServer(client)
@@ -160,7 +163,7 @@ public Action:Command_Status(client, const String:command[], args)
 		PrintToConsole(client, "upd/ip  :  %s:%i (public ip: %s)", buffer, GetConVarInt(g_hIpPort), buffer);
 		GetCurrentMap(buffer, sizeof(buffer));
 		GetClientAbsOrigin(client, vec);
-		(registered) ? PrintToConsole(client, "account     : logged in") : PrintToConsole(client, "account     :  not logged in (No account specified)");
+		(registered) ? PrintToConsole(client, "account  : logged in") : PrintToConsole(client, "account  :  not logged in (No account specified)");
 		PrintToConsole(client, "map     : %s at: %.0f x, %.0f y, %.0f z", buffer, vec[0], vec[1], vec[2]);
 		GetConVarString(g_hTags, buffer, sizeof(buffer));
 		PrintToConsole(client, "tags    : %s", buffer);
@@ -197,6 +200,27 @@ public Action:Command_Status(client, const String:command[], args)
 			}
 		}
 		nextStatus[client]=GetGameTime()+5.0;
+	}
+	return Plugin_Handled;
+}
+
+public Action:Command_Ping(client, const String:command[], args)
+{
+    if(!ValidPlayer(client) || CheckCommandAccess(client, "sm_stealth", 0)) // Console will now work!!!
+	{
+		return Plugin_Continue;
+	}
+	if(nextPing[client]<=GetGameTime())
+	{
+	    PrintToConsole(client, "Client ping times:");
+		for(new i=1; i<=MaxClients; i++)
+		{
+		    if(ValidPlayer(i) && !g_bIsInvisible[i])
+			{
+			    PrintToConsole(client, " %i ms : %N", RoundToFloor(GetClientAvgLatency(i, NetFlow_Both) * 1000.0, i);
+			}
+		}
+		nextPing[client]=GetGameTime()+5.0;
 	}
 	return Plugin_Handled;
 }
