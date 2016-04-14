@@ -12,8 +12,8 @@
 
 //Defines
 #define PLUGIN_VERSION "1.6.1"
-#define JOIN_MESSAGE "Player %N has joined the game"
-#define QUIT_MESSAGE "Player %N left the game (Disconnected by user.)"
+//#define JOIN_MESSAGE "Player %N has joined the game"
+#define QUIT_REASON "Disconnected by user."
 #define STEALTHTEAM 0
 #define PLAYER_MANAGER "tf_player_manager"
 
@@ -249,30 +249,33 @@ ToggleInvis(client)
 	(g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client);
 }
 
-InvisOff(client, announce=true)
+InvisOff(client)
 {
 	g_bIsInvisible[client] = false;
 	SetEntProp(client, Prop_Send, "m_lifeState", 2);
 	ChangeClientTeam(client, g_iOldTeam[client]);
-	SetEntityMoveType(client, MOVETYPE_ISOMETRIC);
 	SetEntProp(client, Prop_Data, "m_takedamage", 2);
 	//new String:buffer[MAX_NAME_LENGTH];
 	//GetClientInfo(client, "name", buffer, sizeof(buffer));
 	//SilentNameChange(client, buffer);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", false); // Enable the integrated TF2 auto-kick manager for this client
-	if(announce)
-	{
-		PrintToChatAll(JOIN_MESSAGE, client);
-	}
-	PrintToChat(client, "You are no longer in stealth mode.");
+	PrintConDisMessg(client, true);
+	PrintToChat(client, "/x03[ADMINSTEALTH]/x01 You are no longer in stealth mode.");
 
 }
 
-InvisOn(client, announce=true)
+InvisOn(client)
 {
 	TF2_RemoveAllWeapons(client);
 	new entity=-1;
 	while((entity=FindEntityByClassname2(entity, "tf_wear*"))!=-1)
+	{
+		if(IsValidEntity(entity) && (GetEntPropEnt(entity, Prop_Send, "m_hOwnerEntity")==client))
+		{
+			TF2_RemoveWearable(client, entity);
+		}
+	}
+	while((entity=FindEntityByClassname2(entity, "tf_powerup_*"))!=-1)
 	{
 		if(IsValidEntity(entity) && (GetEntPropEnt(entity, Prop_Send, "m_hOwnerEntity")==client))
 		{
@@ -286,13 +289,8 @@ InvisOn(client, announce=true)
 	SetEntityMoveType(client, MOVETYPE_NOCLIP);
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", true); // Disable the integrated TF2 auto-kick manager for this client
-	if(announce)
-	{
-		PrintToChatAll(QUIT_MESSAGE, client);
-	}
-	//SilentNameChange(client, "");
-	PrintToChat(client, "You are now in stealth mode.");
-
+	PrintConDisMessg(client, false);
+	PrintToChat(client, "/x03[ADMINSTEALTH]/x01 You are now in stealth mode.");
 }
 
 public Action:Hook_Transmit(entity, client)
@@ -313,6 +311,8 @@ public Action:AFKM_OnAFKEvent(const String:name[], client)
 	}
 	return Plugin_Continue;
 }
+
+//Stocks
 
 bool:ValidPlayer(client)
 {
@@ -349,6 +349,55 @@ GetInvisCount()
 		}
 	}
 	return count;
+}
+
+bool:PrintConDisMessg(client, bool:connect)
+{
+	if(!ValidPlayer(client))
+	{
+		return false;
+	}
+	
+	new String:name[MAX_NAME_LENGTH];
+	GetClientName(client, name, sizeof(name));
+	if(connect)
+	{
+		for(new i=1; i<=MaxClients; i++)
+		{
+			if(!ValidPlayer(i))
+			{
+				continue;
+			}
+			new Handle:bf = StartMessageOne("TextMsg", i, USERMSG_RELIABLE); 
+			if(bf!=INVALID_HANDLE)
+			{
+				BfWriteByte(bf, 3); 
+				BfWriteString(bf, "#game_player_joined_game"); 
+				BfWriteString(bf, name);
+				EndMessage();
+			}
+		}
+	}
+	else
+	{
+		for(new i=1; i<=MaxClients; i++)
+		{
+			if(!ValidPlayer(i))
+			{
+				continue;
+			}
+			new Handle:bf = StartMessageOne("TextMsg", i, USERMSG_RELIABLE); 
+			if(bf!=INVALID_HANDLE)
+			{
+				BfWriteByte(bf, 3);
+				BfWriteString(bf, "#game_player_left_game"); 
+				BfWriteString(bf, name);
+				BfWriteString(bf, QUIT_REASON);
+				EndMessage(); 
+			}
+		}
+	}
+	return true;
 }
 
 bool:IsTF2()
@@ -438,6 +487,7 @@ ServerIP(String:buffer[], size)
 	Format(buffer, size, "%d.%d.%d.%d", pieces[0], pieces[1], pieces[2], pieces[3]);
 }
 
+
 /*
 FindServerStringId(string, size) //Why?
 {
@@ -450,7 +500,7 @@ FindServerStringId(string, size) //Why?
 		for(new i=contains; i<=1024; i++)
 		{
 			if(buffer[i]==')')
-			{
+			{ StrContains()
 				ExplodeString()
 			}
 		}
