@@ -4,15 +4,13 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <tf2_stocks>
-/*
-#undef REQUIRE_PLUGIN
-#tryinclude <afk_manager> 
-#define REQUIRE_PLUGIN
-*/
+//#undef REQUIRE_PLUGIN
+//#tryinclude <afk_manager> 
+//#define REQUIRE_PLUGIN
+
 
 //Defines
 #define PLUGIN_VERSION "1.6.1"
-//#define JOIN_MESSAGE "Player %N has joined the game"
 #define QUIT_REASON "Disconnected by user."
 #define STEALTHTEAM 0
 #define PLAYER_MANAGER "tf_player_manager"
@@ -135,7 +133,7 @@ public Action:Command_JoinTeamOrClass(client, const String:command[], args)
 { 
 	if(g_bIsInvisible[client])
 	{
-		PrintToChat(client, "[SM] Can not join team or class when in stealth mode!");
+		PrintToChat(client, "\x03[STEALTH]\x01 Can not join team or class when in stealth mode!");
 		return Plugin_Handled;
 	}
 	else 
@@ -169,7 +167,7 @@ public Action:Command_Status(client, const String:command[], args)
 		GetCurrentMap(buffer, sizeof(buffer));
 		GetClientAbsOrigin(client, vec);
 		(registered) ? PrintToConsole(client, "account  : logged in") : PrintToConsole(client, "account  :  not logged in (No account specified)");
-		PrintToConsole(client, "map     : %s at: %.0f x, %.0f y, %.0f z", buffer, vec[0], vec[1], vec[2]);
+		PrintToConsole(client, "map     : %s at: %.0f x, %.0f y, %.0f z", buffer, vec[0], vec[1], vec[2]); // I don't know if this is an issue, but "status" command usually shows only 0.0
 		GetConVarString(g_hTags, buffer, sizeof(buffer));
 		PrintToConsole(client, "tags    : %s", buffer);
 		if(GetConVarBool(g_hTVEnabled))
@@ -220,7 +218,7 @@ public Action:Command_Ping(client, const String:command[], args)
 		PrintToConsole(client, "Client ping times:");
 		for(new i=1; i<=MaxClients; i++)
 		{
-			if(ValidPlayer(i) && !g_bIsInvisible[i])
+			if(ValidPlayer(i) && !g_bIsInvisible[i] && !IsFakeClient(i))
 			{
 				PrintToConsole(client, " %i ms : %N", RoundToFloor(GetClientAvgLatency(i, NetFlow_Both) * 1000.0), i);
 			}
@@ -255,12 +253,9 @@ InvisOff(client)
 	SetEntProp(client, Prop_Send, "m_lifeState", 2);
 	ChangeClientTeam(client, g_iOldTeam[client]);
 	SetEntProp(client, Prop_Data, "m_takedamage", 2);
-	//new String:buffer[MAX_NAME_LENGTH];
-	//GetClientInfo(client, "name", buffer, sizeof(buffer));
-	//SilentNameChange(client, buffer);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", false); // Enable the integrated TF2 auto-kick manager for this client
 	PrintConDisMessg(client, true);
-	PrintToChat(client, "/x03[ADMINSTEALTH]/x01 You are no longer in stealth mode.");
+	PrintToChat(client, "\x03[STEALTH]\x01 You are no longer in stealth mode.");
 
 }
 
@@ -286,11 +281,10 @@ InvisOn(client)
 	g_iOldTeam[client]=Arena_GetClientTeam(client);
 	SetEntProp(client, Prop_Send, "m_lifeState", 2);
 	ChangeClientTeam(client, STEALTHTEAM);
-	SetEntityMoveType(client, MOVETYPE_NOCLIP);
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", true); // Disable the integrated TF2 auto-kick manager for this client
 	PrintConDisMessg(client, false);
-	PrintToChat(client, "/x03[ADMINSTEALTH]/x01 You are now in stealth mode.");
+	PrintToChat(client, "\x03[STEALTH]\x01 You are now in stealth mode.");
 }
 
 public Action:Hook_Transmit(entity, client)
@@ -313,7 +307,6 @@ public Action:AFKM_OnAFKEvent(const String:name[], client)
 }
 
 //Stocks
-
 bool:ValidPlayer(client)
 {
 	if(client > 0 && client <= MaxClients && IsClientInGame(client))
