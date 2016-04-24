@@ -4,9 +4,10 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <tf2_stocks>
-//#undef REQUIRE_PLUGIN
-//#tryinclude <afk_manager> 
-//#define REQUIRE_PLUGIN
+#include <admstealth>
+#undef REQUIRE_PLUGIN
+#tryinclude <afk_manager> 
+#define REQUIRE_PLUGIN
 
 
 //Defines
@@ -16,11 +17,12 @@
 #define PLAYER_MANAGER "tf_player_manager"
 
 
-//Cvars and etc
+//Variables
 new bool:g_bIsInvisible[MAXPLAYERS+1];
 new g_iOldTeam[MAXPLAYERS+1];
 new Float:nextStatus[MAXPLAYERS+1];
 new Float:nextPing[MAXPLAYERS+1];
+//Cvar handles
 new Handle:g_hHostname;
 new Handle:g_hTags;
 new Handle:g_hTVEnabled;
@@ -30,6 +32,8 @@ new Handle:g_hIpAddr;
 new Handle:g_hIpPort;
 new serverVer;
 new bool:registered;
+//Forwards
+new Handle:g_BStealthed;
 
 public Plugin:myinfo = 
 {
@@ -85,12 +89,26 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 		strcopy(error, err_max, "This version of the plugin is currently only for Team Fortress 2! Remove the plugin!");
 		return APLRes_Failure;
 	}
+	
+	//Natives
+	CreateNative("ADMStealth_IsStealthed", Native_IsStealthed);
+	RegPluginLibrary("Admin_Stealth_Redux");
+	
+	//Forwards
+	g_BStealthed = CreateGlobalForward("ADMStealth_OnToggle", ET_Event, Param_Cell, Param_Cell, Param_CellByRef);
 	return APLRes_Success;
 }
 
 public OnClientDisconnect(client)
 {
 	SDKUnhook(client, SDKHook_SetTransmit, Hook_Transmit);
+	for(new i=1; i<=MaxClients; i++)
+	{
+		if(ValidPlayer(i) && g_bIsInvisible[i])
+		{
+			HideAnnotationFromPlayer(i, client);
+		}
+	}
 	g_bIsInvisible[client]=false;
 	nextStatus[client]=0.0;
 	nextPing[client]=0.0;
@@ -133,7 +151,7 @@ public Action:Command_JoinTeamOrClass(client, const String:command[], args)
 { 
 	if(g_bIsInvisible[client])
 	{
-		PrintToChat(client, "\x03[STEALTH]\x01 Can not join team or class when in stealth mode!");
+		PrintToChat(client, "\x03[STEALTH]\x01 Cannot join team or class when in stealth mode!");
 		return Plugin_Handled;
 	}
 	else 
@@ -164,6 +182,7 @@ public Action:Command_Status(client, const String:command[], args)
 		PrintToConsole(client, "version : %i/24 %i secure", serverVer, serverVer);
 		ServerIP(buffer, sizeof(buffer));
 		PrintToConsole(client, "upd/ip  :  %s:%i (public ip: %s)", buffer, GetConVarInt(g_hIpPort), buffer);
+		//PrintToConsole(client, "steamid : [0:0:0:0] (0)");
 		GetCurrentMap(buffer, sizeof(buffer));
 		GetClientAbsOrigin(client, vec);
 		(registered) ? PrintToConsole(client, "account  : logged in") : PrintToConsole(client, "account  :  not logged in (No account specified)");
@@ -236,15 +255,50 @@ public Action:Command_Stealth(client, args)
 	}
 	else
 	{
-		ToggleInvis(client);
+		new bool:annotations=false;
+		if(args>0)
+		{
+			new String:buffer[8];
+			GetCmdArg(1, buffer, sizeof(buffer));
+			annotations=bool:StringToInt(buffer);
+		}
+		ToggleInvis(client, annotations);
 		LogAction(client, -1, "%N has toggled stealth mode.", client);
 	}
 	return Plugin_Handled;
 }
 
-ToggleInvis(client)
+ToggleInvis(client, bool:annotations=false)
 {
-	(g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client);
+	new Action:result;
+	new bool:temp=annotations;
+	/* Start function call */
+	Call_StartForward(g_BStealthed);
+
+	/* Push parameters one at a time */
+	Call_PushCell(client);
+	Call_PushCell(!g_bIsInvisible[client]);
+	Call_PushCellRef(annotations);
+
+	/* Finish the call, get the result */
+	Call_Finish(_:result);
+	switch(result)
+	{
+	case Plugin_Continue:
+		{
+			(g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client, annotations);
+			return;
+		}
+	case Plugin_Changed:
+		{
+			(g_bIsInvisible[client]) ? InvisOff(client) : InvisOn(client, temp);
+			return;
+		}
+	case Plugin_Handled, Plugin_Stop:
+		{
+			return;
+		}
+	}
 }
 
 InvisOff(client)
@@ -255,11 +309,18 @@ InvisOff(client)
 	SetEntProp(client, Prop_Data, "m_takedamage", 2);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", false); // Enable the integrated TF2 auto-kick manager for this client
 	PrintConDisMessg(client, true);
-	PrintToChat(client, "\x03[STEALTH]\x01 You are no longer in stealth mode.");
+	for(new i=1; i<=MaxClients; i++)
+	{
+		if(ValidPlayer(i))
+		{
+			HideAnnotationFromPlayer(client, i);
+		}
+	}
+	PrintToChat(client, "\x03[STEALTH]\x01 You are no longer in stealth mode!");
 
 }
 
-InvisOn(client)
+InvisOn(client, annotations=false)
 {
 	TF2_RemoveAllWeapons(client);
 	new entity=-1;
@@ -284,7 +345,19 @@ InvisOn(client)
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", true); // Disable the integrated TF2 auto-kick manager for this client
 	PrintConDisMessg(client, false);
-	PrintToChat(client, "\x03[STEALTH]\x01 You are now in stealth mode.");
+	new String:buffer[128];
+	new String:smallbuff[32];
+	for(new i=1; i<=MaxClients; i++)
+	{
+		if(!annotations) break;
+		if(ValidPlayer(i) && !g_bIsInvisible[i] && !IsFakeClient(i) && IsPlayerAlive(i))
+		{
+			GetClientAuthId(client, AuthId_Steam3, smallbuff, sizeof(smallbuff));
+			Format(buffer, sizeof(buffer), "Player: %N | Team: %i | SteamID3: %s | UserID: %i", i, GetClientTeam(i), smallbuff, GetClientUserId(i));
+			CreateAttachedAnnotation(client, i, -1.0, buffer, false);
+		}
+	}
+	PrintToChat(client, "\x03[STEALTH]\x01 You are now in stealth mode!");
 }
 
 public Action:Hook_Transmit(entity, client)
@@ -392,6 +465,22 @@ bool:PrintConDisMessg(client, bool:connect)
 	}
 	return true;
 }
+/*                                  Natives                                       */
+public Native_IsStealthed(Handle:plugin, numParams)
+{
+	new client=GetNativeCell(1);
+	if(client < 1 || client > MaxClients)
+	{
+		return ThrowNativeError(SP_ERROR_NATIVE, "Invalid client index (%d)", client);
+	}
+	if (!IsClientConnected(client))
+	{
+		return ThrowNativeError(SP_ERROR_NATIVE, "Client %d is not connected", client);
+	}
+	return (g_bIsInvisible[client]) ? true : false;
+}
+
+/*                                  Stocks                                        */
 
 bool:IsTF2()
 {
@@ -478,6 +567,44 @@ ServerIP(String:buffer[], size)
 	pieces[3] = longip & 0x000000FF;
 
 	Format(buffer, size, "%d.%d.%d.%d", pieces[0], pieces[1], pieces[2], pieces[3]);
+}
+
+CreateAttachedAnnotation(client, entity, Float:time, String:text[], bool:effect=true)
+{
+	new Handle:event = CreateEvent("show_annotation");
+	if(event == INVALID_HANDLE)
+	{
+		return -1;
+	}
+	new Float:v_Pos[3];
+	GetEntPropVector(entity, Prop_Send, "m_vecOrigin", v_Pos);
+	SetEventInt(event, "follow_entindex", entity);		
+	SetEventFloat(event, "lifetime", time);
+	SetEventInt(event, "visibilityBitfield", (1 << client));
+	SetEventBool(event,"show_effect", effect);
+	SetEventFloat(event, "worldNormalX", v_Pos[0]);
+	SetEventFloat(event, "worldNormalY", v_Pos[1]);
+	SetEventFloat(event, "worldNormalZ", v_Pos[2]);
+	SetEventFloat(event, "worldPosX", v_Pos[0]);
+	SetEventFloat(event, "worldPosY", v_Pos[1]);
+	SetEventFloat(event, "worldPosZ", v_Pos[2]);
+	SetEventString(event, "text", text);
+	SetEventInt(event, "id", entity); //What to enter inside? Need a way to indentify annotations by entindex!
+	FireEvent(event);
+	return entity;
+}
+
+//https://forums.alliedmods.net/showthread.php?p=1317304
+public bool:HideAnnotationFromPlayer(client, annotation_id)
+{
+	new Handle:event = CreateEvent("hide_annotation");
+	if (event == INVALID_HANDLE)
+	{
+		return false;
+	}
+	SetEventInt(event, "id", annotation_id);
+	FireEvent(event);
+	return true;
 }
 
 
