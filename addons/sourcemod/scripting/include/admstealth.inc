@@ -18,9 +18,9 @@ native bool ADMStealth_IsStealthed(int client);
  * @param client      Client index
  * @param enabled     true - enable stealth mode | false - disable it
  * @param annotations true - enable annotations for the client(valid only when enabled=true) | false - No annotations 
- * @return            True if the client is stealthed | False otherwise.
+ * @return            True if the client is successfully stealthed | False otherwise.
  */
-native bool ADMStealth_ToggleStealth(int client, bool enabled, bool annotations);
+native ADMStealth_ToggleStealth(int client, bool enabled, bool annotations);
 
 
 /**

@@ -19,9 +19,11 @@
 
 //Variables
 new bool:g_bIsInvisible[MAXPLAYERS+1];
+new bool:g_AnnoEnabled[MAXPLAYERS+1];
 new g_iOldTeam[MAXPLAYERS+1];
 new Float:nextStatus[MAXPLAYERS+1];
 new Float:nextPing[MAXPLAYERS+1];
+
 //Cvar handles
 new Handle:g_hHostname;
 new Handle:g_hTags;
@@ -79,7 +81,9 @@ public OnPluginStart()
 	{
 		SDKHook(TF2PManager, SDKHook_ThinkPost, Hook_ThinkPost);
 	}
-	HookEvent("player_disconnect", Event_StealthAdminDisconnect, EventHookMode_Pre);  
+	HookEvent("player_disconnect", Event_StealthAdminDisconnect, EventHookMode_Pre);
+	HookEvent("player_death", Event_PlayerDeath);
+	HookEvent("player_spawn", Event_PlayerSpawn);
 }
 
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
@@ -92,6 +96,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	
 	//Natives
 	CreateNative("ADMStealth_IsStealthed", Native_IsStealthed);
+	CreateNative("ADMStealth_Toggle", Native_StealthToggle);
 	RegPluginLibrary("Admin_Stealth_Redux");
 	
 	//Forwards
@@ -152,7 +157,7 @@ public Action:Command_JoinTeamOrClass(client, const String:command[], args)
 	if(g_bIsInvisible[client])
 	{
 		PrintToChat(client, "\x03[STEALTH]\x01 Cannot join team or class when in stealth mode!");
-		return Plugin_Handled;
+		return Plugin_Stop;
 	}
 	else 
 	{ 
@@ -164,6 +169,44 @@ public Action:Event_StealthAdminDisconnect(Handle:event, const String:name[], bo
 {
 	new client=GetClientOfUserId(GetEventInt(event, "userid"));
 	if(ValidPlayer(client) && g_bIsInvisible[client]) return Plugin_Handled;
+	return Plugin_Continue;
+}
+
+public Action:Event_PlayerSpawn(Handle:event, const String:name[], bool:dontBroadCast)
+{
+	new client=GetClientOfUserId(GetEventInt(event, "userid"));
+	if(!ValidPlayer(client))
+	{
+		return Plugin_Continue;
+	}
+	new String:buffer[128];
+	new String:smallbuff[32];
+	for(new i=1; i<=MaxClients; i++)
+	{
+		if(ValidPlayer(i) && g_bIsInvisible[i] && g_AnnoEnabled[i] && !g_bIsInvisible[client])
+		{
+			GetClientAuthId(client, AuthId_Steam3, smallbuff, sizeof(smallbuff));
+			Format(buffer, sizeof(buffer), "Client: %N | SteamID: %s | UserID: %i", client, smallbuff, GetClientUserId(client));
+			CreateAttachedAnnotation(i, client, -1.0, buffer, false);
+		}
+	}
+	return Plugin_Continue;
+}
+
+public Action:Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadCast)
+{
+	new client=GetClientOfUserId(GetEventInt(event, "userid"));
+	if(!ValidPlayer(client))
+	{
+		return Plugin_Continue;
+	}
+	for(new i=1; i<=MaxClients; i++)
+	{
+		if(ValidPlayer(i) && g_bIsInvisible[i] && g_AnnoEnabled[i])
+		{
+			HideAnnotationFromPlayer(i, client);
+		}
+	}
 	return Plugin_Continue;
 }
 
@@ -182,7 +225,10 @@ public Action:Command_Status(client, const String:command[], args)
 		PrintToConsole(client, "version : %i/24 %i secure", serverVer, serverVer);
 		ServerIP(buffer, sizeof(buffer));
 		PrintToConsole(client, "upd/ip  :  %s:%i (public ip: %s)", buffer, GetConVarInt(g_hIpPort), buffer);
-		//PrintToConsole(client, "steamid : [0:0:0:0] (0)");
+		#if SOURCEMOD_V_MAJOR==1 && SOURCEMOD_V_MINOR>=8 //Add support for Sourcemod 1.8 (this is not optimized!)
+		GetServerAuthId(AuthId_Steam3, buffer, sizeof(buffer));
+		PrintToConsole(client, "steamid : %s (%i)", buffer, GetServerSteamAccountId());
+		#endif
 		GetCurrentMap(buffer, sizeof(buffer));
 		GetClientAbsOrigin(client, vec);
 		(registered) ? PrintToConsole(client, "account  : logged in") : PrintToConsole(client, "account  :  not logged in (No account specified)");
@@ -263,7 +309,6 @@ public Action:Command_Stealth(client, args)
 			annotations=bool:StringToInt(buffer);
 		}
 		ToggleInvis(client, annotations);
-		LogAction(client, -1, "%N has toggled stealth mode.", client);
 	}
 	return Plugin_Handled;
 }
@@ -304,6 +349,7 @@ ToggleInvis(client, bool:annotations=false)
 InvisOff(client)
 {
 	g_bIsInvisible[client] = false;
+	g_AnnoEnabled[client]=false;
 	SetEntProp(client, Prop_Send, "m_lifeState", 2);
 	ChangeClientTeam(client, g_iOldTeam[client]);
 	SetEntProp(client, Prop_Data, "m_takedamage", 2);
@@ -320,7 +366,7 @@ InvisOff(client)
 
 }
 
-InvisOn(client, annotations=false)
+InvisOn(client, bool:annotations=false)
 {
 	TF2_RemoveAllWeapons(client);
 	new entity=-1;
@@ -339,25 +385,39 @@ InvisOn(client, annotations=false)
 		}
 	}
 	g_bIsInvisible[client]=true;
+	g_AnnoEnabled[client]=annotations;
 	g_iOldTeam[client]=Arena_GetClientTeam(client);
 	SetEntProp(client, Prop_Send, "m_lifeState", 2);
 	ChangeClientTeam(client, STEALTHTEAM);
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
 	SetEntProp(client, Prop_Data, "m_autoKickDisabled", true); // Disable the integrated TF2 auto-kick manager for this client
 	PrintConDisMessg(client, false);
+	if(annotations) 
+	{
+		CreateTimer(0.1, Timer_AttachDelayed, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
+	}
+	PrintToChat(client, "\x03[STEALTH]\x01 You are now in stealth mode!");
+}
+
+public Action:Timer_AttachDelayed(Handle:htimer, userid)
+{
+	new client=GetClientOfUserId(userid);
+	if(!ValidPlayer(client))
+	{
+		return Plugin_Stop;
+	}
 	new String:buffer[128];
 	new String:smallbuff[32];
 	for(new i=1; i<=MaxClients; i++)
 	{
-		if(!annotations) break;
 		if(ValidPlayer(i) && !g_bIsInvisible[i] && !IsFakeClient(i) && IsPlayerAlive(i))
 		{
-			GetClientAuthId(client, AuthId_Steam3, smallbuff, sizeof(smallbuff));
-			Format(buffer, sizeof(buffer), "Player: %N | Team: %i | SteamID3: %s | UserID: %i", i, GetClientTeam(i), smallbuff, GetClientUserId(i));
+			GetClientAuthId(i, AuthId_Steam3, smallbuff, sizeof(smallbuff));
+			Format(buffer, sizeof(buffer), "Client: %N | SteamID: %s | UserID: %i", i, smallbuff, GetClientUserId(i));
 			CreateAttachedAnnotation(client, i, -1.0, buffer, false);
 		}
 	}
-	PrintToChat(client, "\x03[STEALTH]\x01 You are now in stealth mode!");
+	return Plugin_Continue;
 }
 
 public Action:Hook_Transmit(entity, client)
@@ -417,6 +477,7 @@ GetInvisCount()
 	return count;
 }
 
+//To-do: Use the new fake event function in Sourcemod 1.8
 bool:PrintConDisMessg(client, bool:connect)
 {
 	if(!ValidPlayer(client))
@@ -478,6 +539,21 @@ public Native_IsStealthed(Handle:plugin, numParams)
 		return ThrowNativeError(SP_ERROR_NATIVE, "Client %d is not connected", client);
 	}
 	return (g_bIsInvisible[client]) ? true : false;
+}
+
+public Native_StealthToggle(Handle:plugin, numParams)
+{
+	new client=GetNativeCell(1);
+	if(client < 1 || client > MaxClients)
+	{
+		return ThrowNativeError(SP_ERROR_NATIVE, "Invalid client index (%d)", client);
+	}
+	if (!IsClientConnected(client))
+	{
+		return ThrowNativeError(SP_ERROR_NATIVE, "Client %d is not connected", client);
+	}
+	(GetNativeCell(2)) ? InvisOn(client, GetNativeCell(3)) : InvisOff(client);
+	return 0;
 }
 
 /*                                  Stocks                                        */
@@ -606,24 +682,3 @@ public bool:HideAnnotationFromPlayer(client, annotation_id)
 	FireEvent(event);
 	return true;
 }
-
-
-/*
-FindServerStringId(string, size) //Why?
-{
-	new String:buffer[1024];
-	new String:buffer1[10][512]
-	ServerCommandEx("status", buffer, sizeof(buffer));
-	new contains=StrContains(buffer, "steamid : ");
-	if(contains>-1)
-	{
-		for(new i=contains; i<=1024; i++)
-		{
-			if(buffer[i]==')')
-			{ StrContains()
-				ExplodeString()
-			}
-		}
-	}
-}
-*/
